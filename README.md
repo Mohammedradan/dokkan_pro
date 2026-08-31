@@ -1,1 +1,1 @@
-# dokkan_pro
+# dokkan_pro - Grocery management (Flutter)
