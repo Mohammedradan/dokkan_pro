@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'db/database.dart';
 import 'screens/home_shell.dart';
+import 'services/notification_service.dart';
 import 'state/app_state.dart';
 
 Future<void> main() async {
@@ -12,18 +13,22 @@ Future<void> main() async {
   await initializeDateFormatting('ar');
   final db = AppDatabase();
   await db.database; // إنشاء قاعدة البيانات
-  runApp(DokkanApp(db: db));
+  final state = AppState(db);
+  await state.init();
+  // إعادة جدولة التنبيه اليومي (إن كان مفعلاً) بمحتوى محدث
+  await NotificationService.instance.rescheduleFrom(state);
+  runApp(DokkanApp(state: state));
 }
 
 class DokkanApp extends StatelessWidget {
-  final AppDatabase db;
+  final AppState state;
 
-  const DokkanApp({super.key, required this.db});
+  const DokkanApp({super.key, required this.state});
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => AppState(db)..init(),
+    return ChangeNotifierProvider.value(
+      value: state,
       child: MaterialApp(
         title: 'دكاني',
         debugShowCheckedModeBanner: false,

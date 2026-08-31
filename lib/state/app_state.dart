@@ -23,11 +23,25 @@ class AppState extends ChangeNotifier {
   String storeName = 'بقالتي';
   String currency = 'ج.م';
 
+  // إعدادات التنبيه اليومي للصلاحية
+  bool notifyEnabled = false;
+  int notifyHour = 9;
+  int notifyMinute = 0;
+
   // ===================== التحميل =====================
 
   Future<void> init() async {
     storeName = (await db.getSetting('store_name')) ?? 'بقالتي';
     currency = (await db.getSetting('currency')) ?? 'ج.م';
+    notifyEnabled = (await db.getSetting('daily_expiry_alert')) == '1';
+    final timeStr = await db.getSetting('daily_expiry_alert_time');
+    if (timeStr != null) {
+      final parts = timeStr.split(':');
+      if (parts.length == 2) {
+        notifyHour = int.tryParse(parts[0]) ?? 9;
+        notifyMinute = int.tryParse(parts[1]) ?? 0;
+      }
+    }
     await reloadAll();
   }
 
@@ -207,6 +221,21 @@ class AppState extends ChangeNotifier {
   Future<void> loadDemoData() async {
     await db.loadDemoData();
     await reloadAll();
+  }
+
+  // ===================== التنبيهات =====================
+
+  String get notifyTimeLabel =>
+      '${notifyHour.toString().padLeft(2, '0')}:${notifyMinute.toString().padLeft(2, '0')}';
+
+  Future<void> setDailyAlert(bool enabled, {int? hour, int? minute}) async {
+    notifyEnabled = enabled;
+    if (hour != null) notifyHour = hour;
+    if (minute != null) notifyMinute = minute;
+    await db.setSetting('daily_expiry_alert', enabled ? '1' : '0');
+    await db.setSetting(
+        'daily_expiry_alert_time', notifyTimeLabel);
+    notifyListeners();
   }
 
   // ===================== النسخ الاحتياطي والتصدير =====================

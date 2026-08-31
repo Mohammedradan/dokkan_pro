@@ -5,6 +5,7 @@ import '../models/product.dart';
 import '../state/app_state.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
+import 'barcode_scanner_screen.dart';
 import 'product_details_screen.dart';
 import 'product_form_screen.dart';
 
@@ -81,6 +82,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
       appBar: AppBar(
         title: const Text('المنتجات'),
         actions: [
+          IconButton(
+            tooltip: 'مسح باركود',
+            icon: const Icon(Icons.qr_code_scanner),
+            onPressed: () => _scanBarcode(context),
+          ),
           IconButton(
             tooltip: 'إضافة منتج',
             icon: const Icon(Icons.add_box_outlined),
@@ -211,6 +217,34 @@ class _ProductsScreenState extends State<ProductsScreen> {
   void _openForm(BuildContext context) {
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const ProductFormScreen()));
+  }
+
+  /// مسح باركود: إن وُجد المنتج يُفتح، وإلا يُفتح نموذج الإضافة بالباركود.
+  Future<void> _scanBarcode(BuildContext context) async {
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+    );
+    if (code == null || !mounted) return;
+
+    final state = context.read<AppState>();
+    final matches =
+        state.products.where((p) => p.barcode == code).toList();
+    if (matches.isNotEmpty) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ProductDetailsScreen(product: matches.first),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('منتج جديد بالباركود: $code — أكمل البيانات')),
+      );
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ProductFormScreen(initialBarcode: code),
+        ),
+      );
+    }
   }
 }
 

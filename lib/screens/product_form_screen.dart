@@ -8,11 +8,15 @@ import '../models/supplier.dart';
 import '../state/app_state.dart';
 import '../widgets/common.dart';
 import '../widgets/pickers.dart';
+import 'barcode_scanner_screen.dart';
 
 class ProductFormScreen extends StatefulWidget {
   final Product? product;
 
-  const ProductFormScreen({super.key, this.product});
+  /// باركود مسبق التعبئة (عند المسح لمنتج جديد).
+  final String? initialBarcode;
+
+  const ProductFormScreen({super.key, this.product, this.initialBarcode});
 
   @override
   State<ProductFormScreen> createState() => _ProductFormScreenState();
@@ -51,7 +55,8 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     super.initState();
     final p = widget.product;
     _name = TextEditingController(text: p?.name ?? '');
-    _barcode = TextEditingController(text: p?.barcode ?? '');
+    _barcode =
+        TextEditingController(text: p?.barcode ?? widget.initialBarcode ?? '');
     _cost = TextEditingController(
         text: p != null ? _num(p.costPrice) : '');
     _sell = TextEditingController(
@@ -161,10 +166,15 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
               controller: _barcode,
               textInputAction: TextInputAction.next,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'الباركود (اختياري)',
-                prefixIcon: Icon(Icons.qr_code_2),
-                border: OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.qr_code_2),
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  tooltip: 'مسح الباركود بالكاميرا',
+                  icon: const Icon(Icons.qr_code_scanner),
+                  onPressed: _scanBarcode,
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -322,6 +332,14 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       ),
     );
     if (picked != null) setState(() => _categoryId = picked.id);
+  }
+
+  Future<void> _scanBarcode() async {
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+    );
+    if (code == null || !mounted) return;
+    setState(() => _barcode.text = code);
   }
 
   Future<void> _pickSupplier(BuildContext context, AppState state) async {

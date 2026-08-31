@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/notification_service.dart';
 import '../state/app_state.dart';
 import '../utils/export.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
 import 'categories_screen.dart';
+import 'help_screen.dart';
 import 'suppliers_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -123,6 +125,25 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
           ]),
+          _section(context, 'التنبيهات', [
+            SwitchListTile(
+              secondary: const Icon(Icons.notifications_active_outlined),
+              title: const Text('تنبيه يومي لانتهاء الصلاحية'),
+              subtitle: Text(state.notifyEnabled
+                  ? 'كل يوم عند ${state.notifyTimeLabel}'
+                  : 'مغلق'),
+              value: state.notifyEnabled,
+              onChanged: (v) => _toggleAlert(context, v),
+            ),
+            ListTile(
+              enabled: state.notifyEnabled,
+              leading: const Icon(Icons.schedule),
+              title: const Text('وقت التنبيه اليومي'),
+              subtitle: Text(state.notifyTimeLabel),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: () => _pickAlertTime(context),
+            ),
+          ]),
           _section(context, 'البيانات والنسخ الاحتياطي', [
             ListTile(
               leading: const Icon(Icons.ios_share_outlined),
@@ -155,15 +176,26 @@ class SettingsScreen extends StatelessWidget {
               onTap: () => _loadDemoData(context),
             ),
           ]),
+          _section(context, 'مساعدة', [
+            ListTile(
+              leading: const Icon(Icons.help_outline),
+              title: const Text('المساعدة ودليل الاستخدام'),
+              subtitle: const Text('شرح كامل لجميع أقسام التطبيق'),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HelpScreen()),
+              ),
+            ),
+          ]),
           _section(context, 'حول', [
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('دكاني — إدارة البقالة'),
-              subtitle: const Text('الإصدار 1.1.0 • يعمل بدون إنترنت'),
+              subtitle: const Text('الإصدار 1.2.0 • يعمل بدون إنترنت'),
               onTap: () => showAboutDialog(
                 context: context,
                 applicationName: 'دكاني',
-                applicationVersion: '1.1.0',
+                applicationVersion: '1.2.0',
                 applicationIcon: Icon(Icons.storefront,
                     size: 40, color: scheme.primary),
                 children: const [
@@ -180,6 +212,43 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _toggleAlert(BuildContext context, bool enable) async {
+    final state = context.read<AppState>();
+    try {
+      if (enable) {
+        await NotificationService.instance.requestPermission();
+      }
+      await state.setDailyAlert(enable);
+      await NotificationService.instance.rescheduleFrom(state);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(enable
+              ? 'تم تفعيل التنبيه اليومي'
+              : 'تم إيقاف التنبيه اليومي'),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر تعديل التنبيه: $e')),
+      );
+    }
+  }
+
+  Future<void> _pickAlertTime(BuildContext context) async {
+    final state = context.read<AppState>();
+    final now = DateTime.now();
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: state.notifyHour, minute: state.notifyMinute),
+      helpText: 'اختر وقت التنبيه اليومي',
+    );
+    if (picked == null) return;
+    await state.setDailyAlert(true, hour: picked.hour, minute: picked.minute);
+    await NotificationService.instance.rescheduleFrom(state);
   }
 
   Future<void> _exportCsv(BuildContext context) async {
