@@ -209,6 +209,47 @@ class AppState extends ChangeNotifier {
     await reloadAll();
   }
 
+  // ===================== النسخ الاحتياطي والتصدير =====================
+
+  Future<String> createBackup() => db.createBackup();
+
+  Future<List<Map<String, Object?>>> listBackups() => db.listBackups();
+
+  Future<void> restoreBackup(String backupPath) async {
+    await db.restoreBackup(backupPath);
+    await reloadAll();
+  }
+
+  Future<void> deleteBackup(String backupPath) => db.deleteBackup(backupPath);
+
+  /// بناء ملف CSV لقائمة المنتجات (مع BOM لدعم العربية في Excel).
+  String buildProductsCsv() {
+    final sb = StringBuffer();
+    sb.write('\uFEFF');
+    sb.writeln(
+        'الاسم,الباركود,الفئة,المورد,الوحدة,سعر التكلفة,سعر البيع,الحد الأدنى,الكمية,الحالة');
+    for (final p in products) {
+      final cat = categoryById(p.categoryId)?.name ?? '';
+      final sup = supplierById(p.supplierId)?.name ?? '';
+      final row = [
+        p.name,
+        p.barcode,
+        cat,
+        sup,
+        p.unit,
+        p.costPrice.toString(),
+        p.sellPrice.toString(),
+        p.minStock.toString(),
+        p.quantity.toString(),
+        p.stockStatus(),
+      ].map(_csvField).join(',');
+      sb.writeln(row);
+    }
+    return sb.toString();
+  }
+
+  String _csvField(String v) => '"${v.replaceAll('"', '""')}"';
+
   // ===================== مشتقات =====================
 
   List<Product> get outOfStockProducts =>

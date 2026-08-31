@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -293,6 +295,56 @@ class AppDatabase {
   Future<int> insertMovement(StockMovement movement) async {
     final db = await database;
     return db.insert('stock_movements', movement.toMap());
+  }
+
+  // ===================== النسخ الاحتياطي =====================
+
+  Future<String> get _dbFilePath async =>
+      join(await getDatabasesPath(), 'dokkan_pro.db');
+
+  /// إنشاء نسخة احتياطية من قاعدة البيانات، يعيد اسم الملف.
+  Future<String> createBackup() async {
+    final dir = await getDatabasesPath();
+    final source = await _dbFilePath;
+    final name = 'backup_${DateTime.now().millisecondsSinceEpoch}.db';
+    await File(source).copy(join(dir, name));
+    return name;
+  }
+
+  /// قائمة النسخ الاحتياطية مرتبة من الأحدث.
+  Future<List<Map<String, Object?>>> listBackups() async {
+    final dir = await getDatabasesPath();
+    final result = <Map<String, Object?>>[];
+    final pattern = RegExp(r'^backup_\d+\.db$');
+    for (final entity in Directory(dir).listSync()) {
+      if (entity is! File) continue;
+      final name = entity.path.split(Platform.pathSeparator).last;
+      if (!pattern.hasMatch(name)) continue;
+      result.add({
+        'name': name,
+        'path': entity.path,
+        'size': entity.lengthSync(),
+        'modified': entity.lastModifiedSync().millisecondsSinceEpoch,
+      });
+    }
+    result.sort(
+        (a, b) => (b['modified'] as int).compareTo(a['modified'] as int));
+    return result;
+  }
+
+  /// استعادة نسخة احتياطية: يغلق قاعدة البيانات الحالية،
+  /// ينسخ ملف النسخة مكانها، ثم يُعاد فتحها عند الطلب التالي.
+  Future<void> restoreBackup(String backupPath) async {
+    final db = await database;
+    await db.close();
+    _db = null;
+    final target = await _dbFilePath;
+    await File(backupPath).copy(target);
+  }
+
+  Future<void> deleteBackup(String backupPath) async {
+    final f = File(backupPath);
+    if (await f.exists()) await f.delete();
   }
 
   // ===================== بيانات تجريبية =====================

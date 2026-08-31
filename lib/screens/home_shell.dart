@@ -7,6 +7,7 @@ import 'home_screen.dart';
 import 'movement_form_screen.dart';
 import 'movements_screen.dart';
 import 'products_screen.dart';
+import 'reports_screen.dart';
 import 'settings_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -24,6 +25,7 @@ class _HomeShellState extends State<HomeShell> {
     ProductsScreen(),
     MovementsScreen(),
     ExpiryScreen(),
+    ReportsScreen(),
     SettingsScreen(),
   ];
 
@@ -73,6 +75,11 @@ class _HomeShellState extends State<HomeShell> {
             icon: Icon(Icons.event_outlined),
             selectedIcon: Icon(Icons.event),
             label: 'الصلاحية',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.bar_chart_outlined),
+            selectedIcon: Icon(Icons.bar_chart),
+            label: 'التقارير',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
