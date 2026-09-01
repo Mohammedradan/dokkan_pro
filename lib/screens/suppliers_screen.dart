@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../models/supplier.dart';
 import '../state/app_state.dart';
+import '../utils/format.dart';
 import '../widgets/common.dart';
+import 'supplier_account_screen.dart';
 import 'supplier_form_screen.dart';
 
 class SuppliersScreen extends StatelessWidget {
@@ -57,6 +59,8 @@ class SuppliersScreen extends StatelessWidget {
               separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
               itemBuilder: (context, i) {
                 final s = state.suppliers[i];
+                final balance = state.supplierBalance(s.id!);
+                final owes = balance > 0.001;
                 return ListTile(
                   leading: CircleAvatar(
                     backgroundColor: scheme.primaryContainer,
@@ -65,16 +69,28 @@ class SuppliersScreen extends StatelessWidget {
                   ),
                   title: Text(s.name),
                   subtitle: Text(
-                    [
-                      if (s.phone.isNotEmpty) s.phone,
-                      if (s.address.isNotEmpty) s.address,
-                    ].join(' • '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    owes
+                        ? 'مستحق: ${moneyWithCurrency(balance, state.currency)}'
+                        : 'لا يوجد رصيد مستحق',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: owes ? Colors.red.shade700 : Colors.green.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      IconButton(
+                        tooltip: 'الحساب والمدفوعات',
+                        icon: const Icon(Icons.receipt_long_outlined),
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                SupplierAccountScreen(supplier: s),
+                          ),
+                        ),
+                      ),
                       IconButton(
                         tooltip: 'تعديل',
                         icon: const Icon(Icons.edit_outlined, size: 20),

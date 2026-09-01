@@ -104,6 +104,10 @@ class ProductDetailsScreen extends StatelessWidget {
                       Icons.sell_outlined,
                       'سعر البيع',
                       moneyWithCurrency(p.sellPrice, state.currency)),
+                  _infoRow(
+                      Icons.trending_up,
+                      'هامش الربح',
+                      _marginText(state, p, scheme)),
                   _infoRow(Icons.trending_down, 'حد الطلب الأدنى',
                       '${formatQty(p.minStock)} ${p.unit}'),
                   if (p.notes.isNotEmpty)
@@ -194,6 +198,16 @@ class ProductDetailsScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _marginText(AppState state, Product p, ColorScheme scheme) {
+    final margin = state.profitMargin(p);
+    final percent = state.profitMarginPercent(p);
+    final base = moneyWithCurrency(margin, state.currency);
+    if (percent == null) {
+      return '$base (حدد سعر التكلفة)';
+    }
+    return '$base (${percent.toStringAsFixed(0)}%)';
   }
 
   Widget _infoRow(IconData icon, String label, String value) {

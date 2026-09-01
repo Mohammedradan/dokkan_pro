@@ -19,6 +19,7 @@ class AppState extends ChangeNotifier {
   List<Product> products = [];
   List<StockMovement> movements = [];
   Map<int, List<StockBatch>> _batches = {};
+  List<Map<String, Object?>> supplierPayments = [];
 
   String storeName = 'بقالتي';
   String currency = 'ج.م';
@@ -59,6 +60,7 @@ class AppState extends ChangeNotifier {
     suppliers = await db.getSuppliers();
     products = await db.getProducts();
     movements = await db.getMovements();
+    supplierPayments = await db.getAllSupplierPayments();
     _batches = {};
     for (final p in products) {
       _batches[p.id!] = await db.getBatchesForProduct(p.id!);
@@ -303,6 +305,116 @@ class AppState extends ChangeNotifier {
     lowStockAlertEnabled = enabled;
     await db.setSetting('low_stock_alert', enabled ? '1' : '0');
     notifyListeners();
+  }
+
+  // ===================== حسابات الموردين =====================
+
+  /// الرصيد المستحق للمورد: قيمة الاستلامات - المدفوعات.
+  double supplierBalance(int supplierId) {
+    var balance = 0.0;
+    for (final m in movements) {
+      if (m.type == 'receive' && m.supplierId == supplierId) {
+        balance += m.quantity * (m.unitCost ?? 0);
+      }
+    }
+    for (final p in supplierPayments) {
+      if (p['supplier_id'] == supplierId) {
+        balance -= (p['amount'] as num).toDouble();
+      }
+    }
+    return balance;
+  }
+
+  List<Map<String, Object?>> paymentsOf(int supplierId) {
+    return supplierPayments
+        .where((p) => p['supplier_id'] == supplierId)
+        .toList();
+  }
+
+  Future<void> addSupplierPayment({
+    required int supplierId,
+    required double amount,
+    String note = '',
+  }) async {
+    if (amount <= 0) throw Exception('المبلغ يجب أن يكون أكبر من صفر');
+    await db.insertSupplierPayment(
+      supplierId: supplierId,
+      amount: amount,
+      note: note,
+    );
+    await reloadAll();
+  }
+
+  Future<void> removeSupplierPayment(int paymentId) async {
+    await db.deleteSupplierPayment(paymentId);
+    await reloadAll();
+  }
+
+  // ===================== قائمة الطلب المقترحة =====================
+
+  /// منتجات تحتاج إعادة طلب (أقل من حد الطلب أو نافدة).
+  List<Product> get reorderProducts {
+    final list = [...lowStockProducts, ...outOfStockProducts];
+    final seen = <int>{};
+    return list.where((p) {
+      final ok = seen.add(p.id!);
+      return ok;
+    }).toList();
+  }
+
+  /// الكمية المقترح طلبها = سد العجز حتى ضعف حد الطلب الأدنى.
+  double suggestedOrderQty(Product p) {
+    if (p.minStock <= 0) return 0;
+    final target = p.minStock * 2;
+    final needed = target - p.quantity;
+    return needed < 0 ? 0 : needed;
+  }
+
+  /// بناء CSV لقائمة الطلب المقترحة.
+  String buildReorderCsv() {
+    final sb = StringBuffer();
+    sb.write('\uFEFF');
+    sb.writeln('المورد,المنتج,الكمية الحالية,الحد الأدنى,الكمية المطلوبة,الوحدة');
+    final bySupplier = <int?, List<Product>>{};
+    for (final p in reorderProducts) {
+      bySupplier.putIfAbsent(p.supplierId, () => []).add(p);
+    }
+    for (final entry in bySupplier.entries) {
+      final supName = supplierById(entry.key)?.name ?? 'بدون مورد';
+      for (final p in entry.value) {
+        final row = [
+          supName,
+          p.name,
+          _fmt(p.quantity),
+          _fmt(p.minStock),
+          _fmt(suggestedOrderQty(p)),
+          p.unit,
+        ].map(_csvField).join(',');
+        sb.writeln(row);
+      }
+    }
+    return sb.toString();
+  }
+
+  // ===================== هامش الربح =====================
+
+  double profitMargin(Product p) => p.sellPrice - p.costPrice;
+
+  double? profitMarginPercent(Product p) {
+    if (p.costPrice <= 0) return null;
+    return ((p.sellPrice - p.costPrice) / p.costPrice) * 100;
+  }
+
+  /// هل يوجد منتج آخر بنفس الباركود (غير هذا المنتج)؟
+  bool barcodeExists(String barcode, {int? excludeId}) {
+    final b = barcode.trim().toLowerCase();
+    if (b.isEmpty) return false;
+    for (final p in products) {
+      if (p.barcode.trim().toLowerCase() == b && p.id != excludeId) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // ===================== المظهر =====================

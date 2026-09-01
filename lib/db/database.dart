@@ -17,8 +17,9 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'dokkan_pro.db');
     _db = await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
     return _db!;
   }
@@ -86,10 +87,34 @@ class AppDatabase {
         value TEXT
       )
     ''');
+    await db.execute('''
+      CREATE TABLE supplier_payments(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        supplier_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL
+      )
+    ''');
     await db.execute('CREATE INDEX idx_products_category ON products(category_id)');
     await db.execute('CREATE INDEX idx_batches_product ON batches(product_id)');
     await db.execute('CREATE INDEX idx_batches_expiry ON batches(expiry_date)');
     await db.execute('CREATE INDEX idx_movements_product ON stock_movements(product_id)');
+  }
+
+  /// ترقية قاعدة البيانات من إصدار قديم دون فقدان البيانات.
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS supplier_payments(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          supplier_id INTEGER NOT NULL,
+          amount REAL NOT NULL,
+          note TEXT NOT NULL DEFAULT '',
+          created_at INTEGER NOT NULL
+        )
+      ''');
+    }
   }
 
   // ===================== الإعدادات =====================
@@ -295,6 +320,33 @@ class AppDatabase {
   Future<int> insertMovement(StockMovement movement) async {
     final db = await database;
     return db.insert('stock_movements', movement.toMap());
+  }
+
+  // ===================== مدفوعات الموردين =====================
+
+  Future<List<Map<String, Object?>>> getAllSupplierPayments() async {
+    final db = await database;
+    return db.query('supplier_payments', orderBy: 'created_at DESC, id DESC');
+  }
+
+  Future<int> insertSupplierPayment({
+    required int supplierId,
+    required double amount,
+    String note = '',
+  }) async {
+    final db = await database;
+    return db.insert('supplier_payments', {
+      'supplier_id': supplierId,
+      'amount': amount,
+      'note': note,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  Future<void> deleteSupplierPayment(int paymentId) async {
+    final db = await database;
+    await db.delete('supplier_payments',
+        where: 'id = ?', whereArgs: [paymentId]);
   }
 
   // ===================== النسخ الاحتياطي =====================

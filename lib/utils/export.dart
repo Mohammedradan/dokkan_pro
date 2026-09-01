@@ -47,3 +47,25 @@ Future<String?> exportExpiryCsv(AppState state) async {
   );
   return file.path;
 }
+
+/// تصدير قائمة الطلب المقترحة إلى CSV ومشاركته.
+Future<String?> exportReorderCsv(AppState state) async {
+  final csv = state.buildReorderCsv();
+  final docs = await getApplicationDocumentsDirectory();
+  final stamp = DateTime.now().millisecondsSinceEpoch;
+  final file = File('${docs.path}/dokkan_reorder_$stamp.csv');
+  await file.writeAsString(csv, flush: true);
+  await Share.shareXFiles(
+    [XFile(file.path, mimeType: 'text/csv')],
+    text: 'قائمة الطلب — دكاني',
+  );
+  return file.path;
+}
+
+/// مشاركة ملف نسخة احتياطية خارج التطبيق.
+Future<void> shareBackupFile(String path) async {
+  await Share.shareXFiles(
+    [XFile(path, mimeType: 'application/octet-stream')],
+    text: 'نسخة احتياطية من بيانات دكاني',
+  );
+}

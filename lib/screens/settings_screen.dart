@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -182,9 +183,16 @@ class SettingsScreen extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.restore_outlined),
               title: const Text('النسخ الاحتياطية'),
-              subtitle: const Text('استعادة أو حذف نسخة محفوظة'),
+              subtitle: const Text('استعادة، مشاركة، أو حذف نسخة محفوظة'),
               trailing: const Icon(Icons.chevron_left),
               onTap: () => _showBackups(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.file_open_outlined),
+              title: const Text('استعادة من ملف خارجي'),
+              subtitle: const Text('اختر ملف نسخة احتياطية .db من الجهاز'),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: () => _restoreFromFile(context),
             ),
           ]),
           _section(context, 'أدوات', [
@@ -211,11 +219,11 @@ class SettingsScreen extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('دكاني — إدارة البقالة'),
-              subtitle: const Text('الإصدار 1.3.0 • يعمل بدون إنترنت'),
+              subtitle: const Text('الإصدار 1.4.0 • يعمل بدون إنترنت'),
               onTap: () => showAboutDialog(
                 context: context,
                 applicationName: 'دكاني',
-                applicationVersion: '1.3.0',
+                applicationVersion: '1.4.0',
                 applicationIcon: Icon(Icons.storefront,
                     size: 40, color: scheme.primary),
                 children: const [
@@ -440,6 +448,22 @@ class SettingsScreen extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
+                        tooltip: 'مشاركة',
+                        icon: const Icon(Icons.ios_share_outlined,
+                            size: 20, color: Colors.indigo),
+                        onPressed: () async {
+                          Navigator.pop(dialogContext);
+                          try {
+                            await shareBackupFile(b['path'] as String);
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('فشل المشاركة: $e')),
+                            );
+                          }
+                        },
+                      ),
+                      IconButton(
                         tooltip: 'استعادة',
                         icon: const Icon(Icons.restore,
                             size: 20, color: Colors.green),
@@ -480,6 +504,39 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _restoreFromFile(BuildContext context) async {
+    final state = context.read<AppState>();
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['db'],
+        dialogTitle: 'اختر ملف النسخة الاحتياطية',
+      );
+      if (result == null || result.files.single.path == null) return;
+      final path = result.files.single.path!;
+      if (!context.mounted) return;
+      final ok = await confirmDialog(
+        context,
+        title: 'استعادة من ملف',
+        message:
+            'سيتم استبدال جميع البيانات الحالية بالملف المختار. هل تريد المتابعة؟',
+        confirmText: 'استعادة',
+        destructive: true,
+      );
+      if (!ok) return;
+      await state.restoreBackup(path);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تمت الاستعادة من الملف بنجاح')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشلت الاستعادة: $e')),
+      );
+    }
   }
 
   Future<void> _restoreBackup(

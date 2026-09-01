@@ -89,6 +89,18 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final state = context.read<AppState>();
+
+    // منع تكرار الباركود
+    if (state.barcodeExists(_barcode.text, excludeId: widget.product?.id)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('هذا الباركود مسجل لمنتج آخر بالفعل'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
     try {
       final now = DateTime.now().millisecondsSinceEpoch;

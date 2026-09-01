@@ -10,6 +10,7 @@ import 'expiry_screen.dart';
 import 'movements_screen.dart';
 import 'product_details_screen.dart';
 import 'products_screen.dart';
+import 'reorder_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -115,6 +116,45 @@ class HomeScreen extends StatelessWidget {
                         onPressed: () => _go(context, const ProductsScreen()),
                         child: Text('عرض كل المنتجات'),
                       ),
+                  ],
+                ),
+              ),
+
+            // قائمة الطلب المقترحة
+            if (state.reorderProducts.isNotEmpty)
+              SectionCard(
+                title: 'قائمة الطلب المقترحة',
+                trailing: Icon(Icons.shopping_cart_outlined,
+                    size: 20, color: scheme.primary),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final p in state.reorderProducts.take(4))
+                      ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: StatusBadge(status: p.stockStatus()),
+                        title: Text(p.name,
+                            style: const TextStyle(fontSize: 13)),
+                        trailing: Text(
+                          'اطلب: ${formatQty(state.suggestedOrderQty(p))} ${p.unit}',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.bold,
+                            color: scheme.primary,
+                          ),
+                        ),
+                      ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () =>
+                            _go(context, const ReorderScreen()),
+                        icon: const Icon(Icons.arrow_back, size: 18),
+                        label: Text(
+                            'عرض الكل (${state.reorderProducts.length})'),
+                      ),
+                    ),
                   ],
                 ),
               ),
