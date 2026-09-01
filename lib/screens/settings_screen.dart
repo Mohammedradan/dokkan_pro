@@ -143,14 +143,34 @@ class SettingsScreen extends StatelessWidget {
               trailing: const Icon(Icons.chevron_left),
               onTap: () => _pickAlertTime(context),
             ),
+            SwitchListTile(
+              secondary: const Icon(Icons.inventory_2_outlined),
+              title: const Text('تنبيه فوري عند انخفاض المخزون'),
+              subtitle: const Text('إشعار لحظي عندما ينخفض منتج عن الحد الأدنى'),
+              value: state.lowStockAlertEnabled,
+              onChanged: (v) => _toggleLowStockAlert(context, v),
+            ),
+          ]),
+          _section(context, 'المظهر', [
+            ListTile(
+              leading: const Icon(Icons.dark_mode_outlined),
+              title: const Text('المظهر'),
+              subtitle: Text(switch (state.themeMode) {
+                'light' => 'فاتح',
+                'dark' => 'داكن',
+                _ => 'حسب النظام',
+              }),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: () => _pickTheme(context, state),
+            ),
           ]),
           _section(context, 'البيانات والنسخ الاحتياطي', [
             ListTile(
               leading: const Icon(Icons.ios_share_outlined),
-              title: const Text('تصدير قائمة المنتجات (CSV)'),
-              subtitle: const Text('مشاركة ملف Excel/CSV بالمنتجات'),
+              title: const Text('تصدير تقارير CSV'),
+              subtitle: const Text('منتجات / حركات / صلاحية — Excel'),
               trailing: const Icon(Icons.chevron_left),
-              onTap: () => _exportCsv(context),
+              onTap: () => _showExportMenu(context),
             ),
             ListTile(
               leading: const Icon(Icons.backup_outlined),
@@ -191,11 +211,11 @@ class SettingsScreen extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('دكاني — إدارة البقالة'),
-              subtitle: const Text('الإصدار 1.2.0 • يعمل بدون إنترنت'),
+              subtitle: const Text('الإصدار 1.3.0 • يعمل بدون إنترنت'),
               onTap: () => showAboutDialog(
                 context: context,
                 applicationName: 'دكاني',
-                applicationVersion: '1.2.0',
+                applicationVersion: '1.3.0',
                 applicationIcon: Icon(Icons.storefront,
                     size: 40, color: scheme.primary),
                 children: const [
@@ -210,6 +230,100 @@ class SettingsScreen extends StatelessWidget {
             ),
           ]),
         ],
+      ),
+    );
+  }
+
+  Future<void> _toggleLowStockAlert(BuildContext context, bool enable) async {
+    final state = context.read<AppState>();
+    if (enable) {
+      await NotificationService.instance.requestPermission();
+    }
+    await state.setLowStockAlert(enable);
+  }
+
+  Future<void> _pickTheme(BuildContext context, AppState state) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('اختر المظهر'),
+        children: [
+          for (final entry in const [
+            ('system', 'حسب النظام', Icons.brightness_auto_outlined),
+            ('light', 'فاتح', Icons.light_mode_outlined),
+            ('dark', 'داكن', Icons.dark_mode_outlined),
+          ])
+            SimpleDialogOption(
+              onPressed: () {
+                state.setThemeMode(entry.$1);
+                Navigator.pop(dialogContext);
+              },
+              child: Row(
+                children: [
+                  Icon(entry.$3,
+                      size: 18,
+                      color: state.themeMode == entry.$1
+                          ? Theme.of(context).colorScheme.primary
+                          : null),
+                  const SizedBox(width: 10),
+                  Text(entry.$2),
+                  if (state.themeMode == entry.$1)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 6),
+                      child: Icon(Icons.check, size: 16, color: Colors.green),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showExportMenu(BuildContext context) async {
+    final state = context.read<AppState>();
+    if (state.products.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لا توجد بيانات للتصدير بعد')),
+      );
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.shopping_basket_outlined),
+              title: const Text('قائمة المنتجات'),
+              subtitle: Text('${state.products.length} منتج'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _exportCsv(context, 'products');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.swap_horiz),
+              title: const Text('سجل الحركات'),
+              subtitle: Text('${state.movements.length} حركة'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _exportCsv(context, 'movements');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.event_outlined),
+              title: const Text('تقرير الصلاحية'),
+              subtitle: Text('${state.allBatches.length} دفعة'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _exportCsv(context, 'expiry');
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -251,19 +365,17 @@ class SettingsScreen extends StatelessWidget {
     await NotificationService.instance.rescheduleFrom(state);
   }
 
-  Future<void> _exportCsv(BuildContext context) async {
+  Future<void> _exportCsv(BuildContext context, String type) async {
     final state = context.read<AppState>();
-    if (state.products.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('لا توجد منتجات للتصدير')),
-      );
-      return;
-    }
     try {
-      final path = await exportProductsCsv(state);
+      final path = switch (type) {
+        'movements' => await exportMovementsCsv(state),
+        'expiry' => await exportExpiryCsv(state),
+        _ => await exportProductsCsv(state),
+      };
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تم التصدير: $path')),
+        SnackBar(content: Text('تم التصدير والمشاركة')),
       );
     } catch (e) {
       if (!context.mounted) return;

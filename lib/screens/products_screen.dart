@@ -8,6 +8,7 @@ import '../widgets/common.dart';
 import 'barcode_scanner_screen.dart';
 import 'product_details_screen.dart';
 import 'product_form_screen.dart';
+import 'stock_take_screen.dart';
 
 class ProductsScreen extends StatefulWidget {
   const ProductsScreen({super.key});
@@ -86,6 +87,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
             tooltip: 'مسح باركود',
             icon: const Icon(Icons.qr_code_scanner),
             onPressed: () => _scanBarcode(context),
+          ),
+          IconButton(
+            tooltip: 'جرد المخزون',
+            icon: const Icon(Icons.fact_check_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const StockTakeScreen()),
+            ),
           ),
           IconButton(
             tooltip: 'إضافة منتج',

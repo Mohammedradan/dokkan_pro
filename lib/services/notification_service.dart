@@ -97,4 +97,39 @@ class NotificationService {
     await _ensureReady();
     await _plugin.cancelAll();
   }
+
+  /// إشعار فوري عند انخفاض مخزون منتج أو نفاذه (بعد حركة خروج).
+  /// معرّف فريد لكل منتج حتى لا تتكدس الإشعارات.
+  Future<void> showLowStockAlert({
+    required int productId,
+    required String productName,
+    required double quantity,
+    required String unit,
+    required bool outOfStock,
+  }) async {
+    await _ensureReady();
+    final details = const NotificationDetails(
+      android: AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: 'تنبيهات المخزون والصلاحية',
+        importance: Importance.high,
+        priority: Priority.high,
+      ),
+    );
+    await _plugin.show(
+      2000 + productId,
+      outOfStock ? 'نفد المخزون: $productName' : 'مخزون منخفض: $productName',
+      outOfStock
+          ? 'المنتج نفد بالكامل — أعد الطلب من المورد'
+          : 'الكمية المتبقية: ${_fmt(quantity)} $unit — أعد الطلب من المورد',
+      details,
+    );
+  }
+
+  String _fmt(double v) {
+    return v == v.roundToDouble()
+        ? v.toInt().toString()
+        : v.toStringAsFixed(2);
+  }
 }

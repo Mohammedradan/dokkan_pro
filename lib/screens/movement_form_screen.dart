@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../models/product.dart';
 import '../models/supplier.dart';
+import '../services/notification_service.dart';
 import '../state/app_state.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
@@ -70,7 +71,7 @@ class _MovementFormScreenState extends State<MovementFormScreen> {
 
     setState(() => _saving = true);
     try {
-      await state.addMovement(
+      final result = await state.addMovement(
         product: product,
         type: _type,
         quantity: double.parse(_qtyController.text),
@@ -83,9 +84,30 @@ class _MovementFormScreenState extends State<MovementFormScreen> {
             : null,
         note: _noteController.text.trim(),
       );
+
+      // تنبيه فوري عند انخفاض المخزون (إن كان مفعلاً)
+      if (result.lowStock && state.lowStockAlertEnabled) {
+        await NotificationService.instance.showLowStockAlert(
+          productId: product.id!,
+          productName: product.name,
+          quantity: result.newQuantity,
+          unit: product.unit,
+          outOfStock: result.outOfStock,
+        );
+      }
+
       if (!mounted) return;
+      final message = result.outOfStock
+          ? 'تم تسجيل الحركة — «${product.name}» نفد بالكامل!'
+          : result.lowStock
+              ? 'تم تسجيل الحركة — «${product.name}» انخفض عن الحد الأدنى'
+              : 'تم تسجيل الحركة بنجاح';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم تسجيل الحركة بنجاح')),
+        SnackBar(
+          content: Text(message),
+          backgroundColor:
+              result.lowStock ? Colors.orange.shade800 : null,
+        ),
       );
       Navigator.pop(context, true);
     } catch (e) {

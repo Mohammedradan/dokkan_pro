@@ -15,6 +15,8 @@ class MovementsScreen extends StatefulWidget {
 
 class _MovementsScreenState extends State<MovementsScreen> {
   String _filter = 'all';
+  final TextEditingController _search = TextEditingController();
+  String _query = '';
 
   static const Map<String, String> _filters = {
     'all': 'الكل',
@@ -26,11 +28,24 @@ class _MovementsScreenState extends State<MovementsScreen> {
   };
 
   @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final items = _filter == 'all'
-        ? state.movements
-        : state.movements.where((m) => m.type == _filter).toList();
+    final query = _query.trim().toLowerCase();
+    final items = state.movements.where((m) {
+      if (_filter != 'all' && m.type != _filter) return false;
+      if (query.isNotEmpty) {
+        final name =
+            state.productById(m.productId)?.name.toLowerCase() ?? '';
+        if (!name.contains(query)) return false;
+      }
+      return true;
+    }).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -50,6 +65,30 @@ class _MovementsScreenState extends State<MovementsScreen> {
       ),
       body: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: TextField(
+              controller: _search,
+              decoration: InputDecoration(
+                hintText: 'بحث باسم المنتج...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _search.clear();
+                          setState(() => _query = '');
+                        },
+                      ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                isDense: true,
+              ),
+              onChanged: (v) => setState(() => _query = v),
+            ),
+          ),
           SizedBox(
             height: 46,
             child: ListView(

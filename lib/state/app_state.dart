@@ -28,6 +28,12 @@ class AppState extends ChangeNotifier {
   int notifyHour = 9;
   int notifyMinute = 0;
 
+  // إعدادات التنبيه الفوري عند انخفاض المخزون
+  bool lowStockAlertEnabled = false;
+
+  // إعدادات المظهر
+  String themeMode = 'system'; // system | light | dark
+
   // ===================== التحميل =====================
 
   Future<void> init() async {
@@ -42,6 +48,9 @@ class AppState extends ChangeNotifier {
         notifyMinute = int.tryParse(parts[1]) ?? 0;
       }
     }
+    lowStockAlertEnabled =
+        (await db.getSetting('low_stock_alert')) == '1';
+    themeMode = (await db.getSetting('theme_mode')) ?? 'system';
     await reloadAll();
   }
 
@@ -144,7 +153,30 @@ class AppState extends ChangeNotifier {
   }
 
   /// إضافة حركة مخزون وتحديث الكمية والدفعات في معاملة واحدة.
-  Future<void> addMovement({
+  /// يعيد معلومات مفيدة للواجهة (هل انخفض المخزون عن الحد؟).
+  Future<MovementResult> addMovement({
+    required Product product,
+    required String type,
+    required double quantity,
+    double? unitCost,
+    int? supplierId,
+    int? expiryDate,
+    String note = '',
+  }) async {
+    final result = await _recordMovement(
+      product: product,
+      type: type,
+      quantity: quantity,
+      unitCost: unitCost,
+      supplierId: supplierId,
+      expiryDate: expiryDate,
+      note: note,
+    );
+    await reloadAll();
+    return result;
+  }
+
+  Future<MovementResult> _recordMovement({
     required Product product,
     required String type,
     required double quantity,
@@ -197,6 +229,35 @@ class AppState extends ChangeNotifier {
       await db.deductFromBatches(product.id!, quantity);
     }
 
+    return MovementResult(
+      newQuantity: newQty,
+      lowStock: !isIncoming &&
+          newQty <= product.minStock &&
+          (product.minStock > 0 || newQty <= 0),
+      outOfStock: !isIncoming && newQty <= 0,
+    );
+  }
+
+  /// تطبيق جرد فعلي: تسجيل فروقات الدفعة الواحدة كحركات تسوية دفعة واحدة.
+  Future<void> applyStockTake(List<(Product, double)> diffs) async {
+    for (final (product, diff) in diffs) {
+      if (diff.abs() < 0.0001) continue;
+      if (diff > 0) {
+        await _recordMovement(
+          product: product,
+          type: 'adjust_in',
+          quantity: diff,
+          note: 'ضبط جرد',
+        );
+      } else {
+        await _recordMovement(
+          product: product,
+          type: 'adjust_out',
+          quantity: -diff,
+          note: 'ضبط جرد',
+        );
+      }
+    }
     await reloadAll();
   }
 
@@ -238,6 +299,20 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setLowStockAlert(bool enabled) async {
+    lowStockAlertEnabled = enabled;
+    await db.setSetting('low_stock_alert', enabled ? '1' : '0');
+    notifyListeners();
+  }
+
+  // ===================== المظهر =====================
+
+  Future<void> setThemeMode(String mode) async {
+    themeMode = mode;
+    await db.setSetting('theme_mode', mode);
+    notifyListeners();
+  }
+
   // ===================== النسخ الاحتياطي والتصدير =====================
 
   Future<String> createBackup() => db.createBackup();
@@ -271,6 +346,58 @@ class AppState extends ChangeNotifier {
         p.minStock.toString(),
         p.quantity.toString(),
         p.stockStatus(),
+      ].map(_csvField).join(',');
+      sb.writeln(row);
+    }
+    return sb.toString();
+  }
+
+  /// بناء ملف CSV لسجل الحركات.
+  String buildMovementsCsv() {
+    final sb = StringBuffer();
+    sb.write('\uFEFF');
+    sb.writeln('التاريخ,المنتج,النوع,الكمية,سعر التكلفة,المورد,ملاحظة');
+    for (final m in movements) {
+      final p = productById(m.productId);
+      final sup = supplierById(m.supplierId);
+      final row = [
+        formatDateTime(m.createdAt),
+        p?.name ?? '',
+        movementTypeLabel(m.type),
+        '${m.isIncoming ? '+' : '-'}${_fmt(m.quantity)} ${p?.unit ?? ''}',
+        m.unitCost?.toString() ?? '',
+        sup?.name ?? '',
+        m.note,
+      ].map(_csvField).join(',');
+      sb.writeln(row);
+    }
+    return sb.toString();
+  }
+
+  /// بناء ملف CSV لتقرير الصلاحية (كل الدفعات وحالتها).
+  String buildExpiryCsv() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final sb = StringBuffer();
+    sb.write('\uFEFF');
+    sb.writeln('المنتج,الكمية,تاريخ الصلاحية,الحالة');
+    for (final b in allBatches) {
+      final p = productById(b.productId);
+      final e = b.expiryDate;
+      String status;
+      if (e == null) {
+        status = 'بدون تاريخ صلاحية';
+      } else if (e < now) {
+        status = 'منتهي';
+      } else if (e <= now + const Duration(days: 30).inMilliseconds) {
+        status = 'ينتهي خلال 30 يوم';
+      } else {
+        status = 'سليم';
+      }
+      final row = [
+        p?.name ?? '',
+        '${_fmt(b.quantity)} ${p?.unit ?? ''}',
+        formatDate(e),
+        status,
       ].map(_csvField).join(',');
       sb.writeln(row);
     }
@@ -369,4 +496,17 @@ class AppState extends ChangeNotifier {
         ? v.toInt().toString()
         : v.toStringAsFixed(2);
   }
+}
+
+/// نتيجة تسجيل حركة مخزون (لتنبيه الواجهة عند انخفاض المخزون).
+class MovementResult {
+  final double newQuantity;
+  final bool lowStock;
+  final bool outOfStock;
+
+  const MovementResult({
+    required this.newQuantity,
+    required this.lowStock,
+    required this.outOfStock,
+  });
 }

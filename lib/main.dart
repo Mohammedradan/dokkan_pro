@@ -29,27 +29,53 @@ class DokkanApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider.value(
       value: state,
-      child: MaterialApp(
-        title: 'دكاني',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00897B)),
-          appBarTheme: const AppBarTheme(
-            centerTitle: true,
-          ),
-          inputDecorationTheme: const InputDecorationTheme(
-            border: OutlineInputBorder(),
-          ),
-        ),
-        locale: const Locale('ar'),
-        supportedLocales: const [Locale('ar')],
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        home: const HomeShell(),
+      // قراءة إعداد المظهر تحت الـ Provider ليعاد بناء MaterialApp عند تغييره
+      child: Builder(
+        builder: (context) {
+          final appState = context.watch<AppState>();
+          final themeMode = switch (appState.themeMode) {
+            'light' => ThemeMode.light,
+            'dark' => ThemeMode.dark,
+            _ => ThemeMode.system,
+          };
+          return MaterialApp(
+            title: 'دكاني',
+            debugShowCheckedModeBanner: false,
+            theme: ThemeData(
+              useMaterial3: true,
+              colorScheme:
+                  ColorScheme.fromSeed(seedColor: const Color(0xFF00897B)),
+              appBarTheme: const AppBarTheme(
+                centerTitle: true,
+              ),
+              inputDecorationTheme: const InputDecorationTheme(
+                border: OutlineInputBorder(),
+              ),
+            ),
+            darkTheme: ThemeData(
+              useMaterial3: true,
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: const Color(0xFF00897B),
+                brightness: Brightness.dark,
+              ),
+              appBarTheme: const AppBarTheme(
+                centerTitle: true,
+              ),
+              inputDecorationTheme: const InputDecorationTheme(
+                border: OutlineInputBorder(),
+              ),
+            ),
+            themeMode: themeMode,
+            locale: const Locale('ar'),
+            supportedLocales: const [Locale('ar')],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            home: const HomeShell(),
+          );
+        },
       ),
     );
   }
