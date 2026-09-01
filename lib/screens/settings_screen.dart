@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../services/notification_service.dart';
@@ -165,6 +168,25 @@ class SettingsScreen extends StatelessWidget {
               onTap: () => _pickTheme(context, state),
             ),
           ]),
+          _section(context, 'الأمان', [
+            SwitchListTile(
+              secondary: const Icon(Icons.lock_outline),
+              title: const Text('قفل التطبيق برقم سري'),
+              subtitle: Text(state.pinEnabled
+                  ? 'مفعّل — يُطلب الرقم عند الفتح والعودة للتطبيق'
+                  : 'مغلق'),
+              value: state.pinEnabled,
+              onChanged: (v) => _togglePin(context, v),
+            ),
+            ListTile(
+              enabled: state.hasPin,
+              leading: const Icon(Icons.password_outlined),
+              title: const Text('تغيير الرقم السري'),
+              subtitle: const Text('تعيين رقم سري جديد (4-6 أرقام)'),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: () => _changePin(context),
+            ),
+          ]),
           _section(context, 'البيانات والنسخ الاحتياطي', [
             ListTile(
               leading: const Icon(Icons.ios_share_outlined),
@@ -194,6 +216,29 @@ class SettingsScreen extends StatelessWidget {
               trailing: const Icon(Icons.chevron_left),
               onTap: () => _restoreFromFile(context),
             ),
+            ListTile(
+              leading: const Icon(Icons.file_download_outlined),
+              title: const Text('استيراد منتجات من CSV'),
+              subtitle: const Text('نقل منتجات من ملف (مثل تصدير جهاز آخر)'),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: () => _importCsv(context),
+            ),
+          ]),
+          _section(context, 'أدوات', [
+            ListTile(
+              leading: const Icon(Icons.notifications_outlined),
+              title: const Text('إرسال إشعار تجريبي'),
+              subtitle: const Text('تحقق من عمل التنبيهات على جهازك'),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: () => _testNotification(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.science_outlined),
+              title: const Text('تحميل بيانات تجريبية'),
+              subtitle: const Text('فئات ومنتجات ودفعات جاهزة للتجربة'),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: () => _loadDemoData(context),
+            ),
           ]),
           _section(context, 'أدوات', [
             ListTile(
@@ -219,11 +264,11 @@ class SettingsScreen extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('دكاني — إدارة البقالة'),
-              subtitle: const Text('الإصدار 1.4.0 • يعمل بدون إنترنت'),
+              subtitle: const Text('الإصدار 1.5.0 • يعمل بدون إنترنت'),
               onTap: () => showAboutDialog(
                 context: context,
                 applicationName: 'دكاني',
-                applicationVersion: '1.4.0',
+                applicationVersion: '1.5.0',
                 applicationIcon: Icon(Icons.storefront,
                     size: 40, color: scheme.primary),
                 children: const [
@@ -334,6 +379,218 @@ class SettingsScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _togglePin(BuildContext context, bool enable) async {
+    final state = context.read<AppState>();
+    if (enable) {
+      // عند التفعيل: إن لم يوجد رقم سري، يُطلب إنشاؤه أولاً
+      if (!state.hasPin) {
+        final pin = await _pinDialog(context, title: 'إنشاء رقم سري');
+        if (pin == null || !context.mounted) return;
+        await state.setPin(pin);
+      }
+      await state.setPinEnabled(true);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تفعيل قفل التطبيق')),
+      );
+    } else {
+      // عند الإيقاف: التحقق من الرقم الحالي
+      final ok = await _verifyPinDialog(context, state);
+      if (!ok) return;
+      await state.setPinEnabled(false);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إيقاف قفل التطبيق')),
+      );
+    }
+  }
+
+  Future<void> _changePin(BuildContext context) async {
+    final state = context.read<AppState>();
+    final ok = await _verifyPinDialog(context, state);
+    if (!ok || !context.mounted) return;
+    final pin = await _pinDialog(context, title: 'رقم سري جديد');
+    if (pin == null || !context.mounted) return;
+    await state.setPin(pin);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم تغيير الرقم السري')),
+    );
+  }
+
+  /// حوار إنشاء/تغيير رقم سري (تعبئة + تأكيد). يعيد الرقم أو null.
+  Future<String?> _pinDialog(BuildContext context, {required String title}) {
+    final first = TextEditingController();
+    final second = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: first,
+              autofocus: true,
+              obscureText: true,
+              maxLength: 6,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'الرقم السري (4-6 أرقام)',
+                prefixIcon: Icon(Icons.lock_outline),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: second,
+              obscureText: true,
+              maxLength: 6,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'تأكيد الرقم السري',
+                prefixIcon: Icon(Icons.lock_outline),
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final p1 = first.text.trim();
+              final p2 = second.text.trim();
+              if (p1.length < 4 || p1 != p2) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(
+                    content: Text('أدخل 4-6 أرقام وتأكد من تطابق الحقلين'),
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(dialogContext, p1);
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    ).whenComplete(() {
+      first.dispose();
+      second.dispose();
+    });
+  }
+
+  /// حوار التحقق من الرقم السري الحالي.
+  Future<bool> _verifyPinDialog(BuildContext context, AppState state) {
+    final controller = TextEditingController();
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('التحقق من الرقم السري'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          obscureText: true,
+          maxLength: 6,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          decoration: const InputDecoration(
+            labelText: 'الرقم السري الحالي',
+            prefixIcon: Icon(Icons.lock_outline),
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (state.verifyPin(controller.text.trim())) {
+                Navigator.pop(dialogContext, true);
+              } else {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('رقم سري غير صحيح')),
+                );
+              }
+            },
+            child: const Text('تحقق'),
+          ),
+        ],
+      ),
+    ).whenComplete(controller.dispose);
+  }
+
+  Future<void> _importCsv(BuildContext context) async {
+    final state = context.read<AppState>();
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['csv'],
+        dialogTitle: 'اختر ملف المنتجات CSV',
+      );
+      if (result == null || result.files.single.path == null) return;
+      final file = File(result.files.single.path!);
+      final content = await file.readAsString();
+      if (!context.mounted) return;
+
+      // معاينة قبل الاستيراد
+      final lines = content
+          .split('\n')
+          .where((l) => l.trim().isNotEmpty)
+          .take(4)
+          .toList();
+      final ok = await confirmDialog(
+        context,
+        title: 'استيراد منتجات من CSV',
+        message:
+            'سطر واحد = منتج واحد. سيتم إنشاء الفئات والموردين الجدد تلقائياً.\n\nمعاينة:\n${lines.join('\n')}',
+        confirmText: 'استيراد',
+      );
+      if (!ok) return;
+
+      final resultImport = await state.importProductsCsv(content);
+      if (!context.mounted) return;
+      final msg = 'تم استيراد ${resultImport.added} منتج'
+          '${resultImport.skipped > 0 ? '، تم تخطي ${resultImport.skipped}' : ''}';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: resultImport.errors.isEmpty
+              ? Colors.green.shade700
+              : Colors.orange.shade800,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل الاستيراد: $e')),
+      );
+    }
+  }
+
+  Future<void> _testNotification(BuildContext context) async {
+    try {
+      await NotificationService.instance.requestPermission();
+      await NotificationService.instance.showTestNotification();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إرسال إشعار تجريبي')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل إرسال الإشعار: $e')),
+      );
+    }
   }
 
   Future<void> _toggleAlert(BuildContext context, bool enable) async {

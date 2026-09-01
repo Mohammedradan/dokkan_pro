@@ -98,6 +98,25 @@ class NotificationService {
     await _plugin.cancelAll();
   }
 
+  /// إشعار تجريبي للتحقق من عمل التنبيهات.
+  Future<void> showTestNotification() async {
+    await _ensureReady();
+    await _plugin.show(
+      9001,
+      'دكاني',
+      'هذا إشعار تجريبي — التنبيهات تعمل ✓',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          _channelName,
+          channelDescription: 'تنبيهات المخزون والصلاحية',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+    );
+  }
+
   /// إشعار فوري عند انخفاض مخزون منتج أو نفاذه (بعد حركة خروج).
   /// معرّف فريد لكل منتج حتى لا تتكدس الإشعارات.
   Future<void> showLowStockAlert({

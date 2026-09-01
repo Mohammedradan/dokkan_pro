@@ -40,6 +40,14 @@ class _ExpiryScreenState extends State<ExpiryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('تواريخ الصلاحية'),
+        actions: [
+          if (state.expiredBatches.isNotEmpty && _tab == 0)
+            TextButton.icon(
+              onPressed: () => _wasteAll(context, state),
+              icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+              label: Text('إتلاف المنتهي (${state.expiredBatches.length})'),
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -91,6 +99,25 @@ class _ExpiryScreenState extends State<ExpiryScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _wasteAll(BuildContext context, AppState state) async {
+    final count = state.expiredBatches.length;
+    if (count == 0) return;
+    final ok = await confirmDialog(
+      context,
+      title: 'إتلاف كل الدفعات المنتهية',
+      message:
+          'سيتم إتلاف $count دفعة منتهية الصلاحية وتسجيلها كحركات هالك. هل تريد المتابعة؟',
+      confirmText: 'إتلاف الكل',
+      destructive: true,
+    );
+    if (!ok) return;
+    final n = await state.wasteAllExpired();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('تم إتلاف $n دفعة منتهية')),
     );
   }
 

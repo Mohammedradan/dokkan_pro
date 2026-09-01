@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/stock_movement.dart';
@@ -55,6 +56,35 @@ class ReportsScreen extends StatelessWidget {
     final top = state.products.toList()
       ..sort((a, b) =>
           (b.quantity * b.costPrice).compareTo(a.quantity * a.costPrice));
+
+    // ====== ملخص حركة المخزون آخر 6 أشهر ======
+    final now = DateTime.now();
+    final monthly = <String, ({double inQty, double outQty})>{};
+    for (var m = 5; m >= 0; m--) {
+      final d = DateTime(now.year, now.month - m, 1);
+      monthly['${d.year}-${d.month}'] = (inQty: 0, outQty: 0);
+    }
+    for (final mv in state.movements) {
+      final d = DateTime.fromMillisecondsSinceEpoch(mv.createdAt);
+      final key = '${d.year}-${d.month}';
+      if (!monthly.containsKey(key)) continue;
+      if (mv.isIncoming) {
+        monthly[key] = (
+          inQty: monthly[key]!.inQty + mv.quantity,
+          outQty: monthly[key]!.outQty,
+        );
+      } else {
+        monthly[key] = (
+          inQty: monthly[key]!.inQty,
+          outQty: monthly[key]!.outQty + mv.quantity,
+        );
+      }
+    }
+    var maxMonthlyQty = 1.0;
+    for (final v in monthly.values) {
+      if (v.inQty > maxMonthlyQty) maxMonthlyQty = v.inQty;
+      if (v.outQty > maxMonthlyQty) maxMonthlyQty = v.outQty;
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('التقارير')),
@@ -120,6 +150,22 @@ class ReportsScreen extends StatelessWidget {
                           ),
                       ],
                     ),
+            ),
+
+            SectionCard(
+              title: 'حركة المخزون — آخر 6 أشهر',
+              child: Column(
+                children: [
+                  for (final entry in monthly.entries)
+                    _MonthRow(
+                      label: DateFormat('MMM yyyy', 'ar')
+                          .format(DateTime.parse('${entry.key}-01')),
+                      inQty: entry.value.inQty,
+                      outQty: entry.value.outQty,
+                      max: maxMonthlyQty,
+                    ),
+                ],
+              ),
             ),
 
             SectionCard(
@@ -243,6 +289,94 @@ class ReportsScreen extends StatelessWidget {
       default:
         return Colors.blueGrey;
     }
+  }
+}
+
+class _MonthRow extends StatelessWidget {
+  final String label;
+  final double inQty;
+  final double outQty;
+  final double max;
+
+  const _MonthRow({
+    required this.label,
+    required this.inQty,
+    required this.outQty,
+    required this.max,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 62,
+                child: Text(
+                  label,
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: (inQty / max).clamp(0.0, 1.0),
+                    minHeight: 8,
+                    backgroundColor: scheme.surfaceContainerHighest,
+                    color: Colors.green,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              SizedBox(
+                width: 56,
+                child: Text(
+                  '+${formatQty(inQty)}',
+                  textAlign: TextAlign.left,
+                  style: TextStyle(
+                      fontSize: 11, color: Colors.green.shade700),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Row(
+            children: [
+              const SizedBox(width: 62),
+              const SizedBox(width: 6),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: (outQty / max).clamp(0.0, 1.0),
+                    minHeight: 8,
+                    backgroundColor: scheme.surfaceContainerHighest,
+                    color: Colors.red,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              SizedBox(
+                width: 56,
+                child: Text(
+                  '-${formatQty(outQty)}',
+                  textAlign: TextAlign.left,
+                  style: TextStyle(
+                      fontSize: 11, color: Colors.red.shade700),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 

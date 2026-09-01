@@ -35,6 +35,10 @@ class AppState extends ChangeNotifier {
   // إعدادات المظهر
   String themeMode = 'system'; // system | light | dark
 
+  // إعدادات قفل التطبيق برقم سري
+  bool pinEnabled = false;
+  String _pinCode = '';
+
   // ===================== التحميل =====================
 
   Future<void> init() async {
@@ -52,6 +56,8 @@ class AppState extends ChangeNotifier {
     lowStockAlertEnabled =
         (await db.getSetting('low_stock_alert')) == '1';
     themeMode = (await db.getSetting('theme_mode')) ?? 'system';
+    pinEnabled = (await db.getSetting('pin_enabled')) == '1';
+    _pinCode = (await db.getSetting('pin_code')) ?? '';
     await reloadAll();
   }
 
@@ -265,6 +271,11 @@ class AppState extends ChangeNotifier {
 
   /// إتلاف دفعة كاملة (منتهية الصلاحية مثلاً).
   Future<void> wasteBatch(Product product, StockBatch batch) async {
+    await _recordWaste(product, batch);
+    await reloadAll();
+  }
+
+  Future<void> _recordWaste(Product product, StockBatch batch) async {
     if (batch.quantity <= 0) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     await db.insertMovement(StockMovement(
@@ -278,7 +289,18 @@ class AppState extends ChangeNotifier {
     final newQty = product.quantity - batch.quantity;
     await db.updateProductQuantity(product.id!, newQty < 0 ? 0 : newQty);
     await db.deleteBatch(batch.id!);
+  }
+
+  /// إتلاف كل الدفعات المنتهية دفعة واحدة. يعيد عدد الدفعات المتلفة.
+  Future<int> wasteAllExpired() async {
+    final expired = expiredBatches;
+    for (final b in expired) {
+      final p = productById(b.productId);
+      if (p == null) continue;
+      await _recordWaste(p, b);
+    }
     await reloadAll();
+    return expired.length;
   }
 
   Future<void> loadDemoData() async {
@@ -423,6 +445,198 @@ class AppState extends ChangeNotifier {
     themeMode = mode;
     await db.setSetting('theme_mode', mode);
     notifyListeners();
+  }
+
+  // ===================== قفل التطبيق (PIN) =====================
+
+  bool get hasPin => _pinCode.isNotEmpty;
+
+  Future<void> setPin(String code) async {
+    _pinCode = code;
+    await db.setSetting('pin_code', code);
+    notifyListeners();
+  }
+
+  Future<void> setPinEnabled(bool enabled) async {
+    pinEnabled = enabled;
+    await db.setSetting('pin_enabled', enabled ? '1' : '0');
+    notifyListeners();
+  }
+
+  bool verifyPin(String input) =>
+      _pinCode.isNotEmpty && input == _pinCode;
+
+  // ===================== استيراد المنتجات من CSV =====================
+
+  /// استيراد منتجات من ملف CSV (نفس تنسيق التصدير).
+  /// الأعمدة: الاسم، الباركود، الفئة، المورد، الوحدة، سعر التكلفة،
+  /// سعر البيع، الحد الأدنى، الكمية — مع أو بدون صف العناوين.
+  Future<ImportResult> importProductsCsv(String content) async {
+    final rows = _parseCsv(content);
+    if (rows.isEmpty) {
+      throw Exception('الملف فارغ أو غير صالح');
+    }
+
+    // كشف صف العناوين
+    Map<String, int>? header;
+    var start = 0;
+    final first = rows.first.map((c) => c.trim()).toList();
+    if (first.contains('الاسم') || first.contains('name')) {
+      header = {};
+      for (var i = 0; i < first.length; i++) {
+        header[first[i]] = i;
+      }
+      start = 1;
+    }
+
+    var added = 0;
+    var skipped = 0;
+    final errors = <String>[];
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    for (var r = start; r < rows.length; r++) {
+      final row = rows[r];
+      if (row.every((c) => c.trim().isEmpty)) continue;
+
+      String cell(int idx) =>
+          (idx >= 0 && idx < row.length) ? row[idx].trim() : '';
+
+      String named(String ar, String en) {
+        final i = header?[ar] ?? header?[en];
+        return cell(i ?? -1);
+      }
+
+      final name = header != null ? named('الاسم', 'name') : cell(0);
+      if (name.isEmpty) {
+        skipped++;
+        continue;
+      }
+      final barcode =
+          header != null ? named('الباركود', 'barcode') : cell(1);
+      if (barcode.isNotEmpty && barcodeExists(barcode)) {
+        skipped++;
+        continue;
+      }
+
+      int? categoryId;
+      final catName = header != null ? named('الفئة', 'category') : cell(2);
+      if (catName.isNotEmpty) {
+        categoryId = await _categoryIdByName(catName);
+      }
+
+      int? supplierId;
+      final supName =
+          header != null ? named('المورد', 'supplier') : cell(3);
+      if (supName.isNotEmpty) {
+        supplierId = await _supplierIdByName(supName);
+      }
+
+      var unit = header != null ? named('الوحدة', 'unit') : cell(4);
+      if (unit.isEmpty) unit = 'قطعة';
+
+      double num(String s) =>
+          double.tryParse(s.replaceAll(',', '').trim()) ?? 0;
+      final cost =
+          num(header != null ? named('سعر التكلفة', 'cost_price') : cell(5));
+      final sell =
+          num(header != null ? named('سعر البيع', 'sell_price') : cell(6));
+      final minStock =
+          num(header != null ? named('الحد الأدنى', 'min_stock') : cell(7));
+      final qty =
+          num(header != null ? named('الكمية', 'quantity') : cell(8));
+
+      try {
+        await db.insertProduct(Product(
+          name: name,
+          barcode: barcode,
+          categoryId: categoryId,
+          supplierId: supplierId,
+          unit: unit,
+          costPrice: cost,
+          sellPrice: sell,
+          minStock: minStock,
+          quantity: qty,
+          notes: '',
+          createdAt: now,
+          updatedAt: now,
+        ));
+        added++;
+      } catch (e) {
+        errors.add('سطر ${r + 1} ($name): $e');
+      }
+    }
+
+    await reloadAll();
+    return ImportResult(added: added, skipped: skipped, errors: errors);
+  }
+
+  Future<int> _categoryIdByName(String name) async {
+    final n = name.trim();
+    for (final c in categories) {
+      if (c.name == n) return c.id!;
+    }
+    final id = await db.insertCategory(n);
+    categories = await db.getCategories();
+    return id;
+  }
+
+  Future<int> _supplierIdByName(String name) async {
+    final n = name.trim();
+    for (final s in suppliers) {
+      if (s.name == n) return s.id!;
+    }
+    final id = await db.insertSupplier(Supplier(
+      name: n,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    ));
+    suppliers = await db.getSuppliers();
+    return id;
+  }
+
+  /// محلل CSV بسيط يدعم الحقول المقتبسة والفاصلة داخلها.
+  List<List<String>> _parseCsv(String text) {
+    final rows = <List<String>>[];
+    var row = <String>[];
+    var field = StringBuffer();
+    var inQuotes = false;
+    final src = text
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .replaceFirst('\uFEFF', '');
+    for (var i = 0; i < src.length; i++) {
+      final ch = src[i];
+      if (inQuotes) {
+        if (ch == '"') {
+          if (i + 1 < src.length && src[i + 1] == '"') {
+            field.write('"');
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          field.write(ch);
+        }
+      } else {
+        if (ch == '"') {
+          inQuotes = true;
+        } else if (ch == ',') {
+          row.add(field.toString());
+          field = StringBuffer();
+        } else if (ch == '\n') {
+          row.add(field.toString());
+          if (row.isNotEmpty) rows.add(row);
+          row = <String>[];
+          field = StringBuffer();
+        } else {
+          field.write(ch);
+        }
+      }
+    }
+    if (field.isNotEmpty || row.isNotEmpty) {
+      row.add(field.toString());
+      if (row.isNotEmpty) rows.add(row);
+    }
+    return rows;
   }
 
   // ===================== النسخ الاحتياطي والتصدير =====================
@@ -620,5 +834,18 @@ class MovementResult {
     required this.newQuantity,
     required this.lowStock,
     required this.outOfStock,
+  });
+}
+
+/// نتيجة استيراد منتجات من ملف CSV.
+class ImportResult {
+  final int added;
+  final int skipped;
+  final List<String> errors;
+
+  const ImportResult({
+    required this.added,
+    required this.skipped,
+    this.errors = const [],
   });
 }

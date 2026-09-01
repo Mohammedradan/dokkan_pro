@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'db/database.dart';
 import 'screens/home_shell.dart';
+import 'screens/pin_screen.dart';
 import 'services/notification_service.dart';
 import 'state/app_state.dart';
 
@@ -73,7 +74,7 @@ class DokkanApp extends StatelessWidget {
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
             ],
-            home: const HomeShell(),
+            home: const PinGate(child: HomeShell()),
           );
         },
       ),
